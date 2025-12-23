@@ -31,6 +31,7 @@ GSM-based emergency alert system
 Low-cost and scalable design
 
 🖥️ Software & Tools
+
 Arduino IDE
 Embedded C
 CIRKITDESIGNER (for circuit design)
