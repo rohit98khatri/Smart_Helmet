@@ -16,6 +16,8 @@ Emergency Alert: GSM module sends alert messages automatically.
 
 🧩 Components Used
 Microcontroller (Arduino Uno)
+Dc motor(acting as a virtual Ev)
+HELMET
 Alcohol Sensor (MQ-3)
 IR Sensor
 Accelerometer / Tilt Sensor
