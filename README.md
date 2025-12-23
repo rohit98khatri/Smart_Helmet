@@ -1,2 +1,142 @@
 # Smart_Helmet
-Smart Helmet is an IoT-based rider safety system that ensures helmet usage, detects alcohol consumption, and identifies accidents using sensors and a microcontroller. In case of an accident, it automatically sends emergency alerts via GSM, helping reduce response time and improve road safety.
+#include <SoftwareSerial.h>
+#include <TinyGPS++.h>  // Include TinyGPS++ library for GPS parsing
+
+// Define pins
+const int zPin = A3;          // Z-out connected to analog pin A3 (for tilt detection)
+const int buzzerPin = 7;      // Buzzer connected to digital pin 7
+const int mq3Pin = A0;        // MQ3 alcohol sensor connected to analog pin A0
+const int transmitterPin = 6; // Transmitter controlled by transistor connected to digital pin 6
+const int IRPin = 8;          // IR sensor connected to digital pin 8
+
+// Threshold values
+const int tiltThreshold = 100;     // Threshold for tilt detection (accident) based on Z-axis
+const int alcoholThreshold = 450; // Threshold for alcohol detection
+
+// GPS and GSM module connections
+SoftwareSerial sim800l(3, 2);     // RX (pin 3), TX (pin 2) for SIM800L
+SoftwareSerial gpsSerial(9, 10);  // RX (pin 9), TX (pin 10) for GPS
+TinyGPSPlus gps;  // TinyGPS++ object for parsing GPS data
+
+void setup() {
+  // Initialize serial communication for debugging
+  Serial.begin(9600);
+  
+  // Initialize SIM800L
+  sim800l.begin(9600);       
+  
+  // Initialize GPS
+  gpsSerial.begin(9600);     
+
+  // Set buzzer and transmitter pin as output
+  pinMode(buzzerPin, OUTPUT); 
+  pinMode(transmitterPin, OUTPUT); 
+  pinMode(IRPin, INPUT); // Set IR sensor pin as input
+  digitalWrite(buzzerPin, LOW);      // Ensure the buzzer is off at the start
+  digitalWrite(transmitterPin, LOW); // Ensure the transmitter is off at the start
+
+  // Initialize SIM800L for SMS
+  delay(1000); // Wait for the SIM800L to initialize
+  sim800l.println("AT");        // Check if SIM800L is ready
+  delay(1000);
+  sim800l.println("AT+CMGF=1"); // Set SMS mode to text
+  delay(1000);
+}
+
+void loop() {
+  // Read Z-axis value from accelerometer
+  int zValue = analogRead(zPin);
+
+  // Read alcohol sensor value
+  int alcoholValue = analogRead(mq3Pin);
+  
+  // Read IR sensor value
+  bool headDetected = digitalRead(IRPin); // 0 if head is detected, 1 if not
+
+  // Print the values to the Serial Monitor for debugging
+  Serial.print("Z: "); Serial.print(zValue);
+  Serial.print(" | Alcohol: "); Serial.print(alcoholValue);
+  Serial.print(" | Helmet: "); Serial.println(headDetected ? "Not Detected" : "Detected");
+
+  // Check for new GPS data and parse it
+  while (gpsSerial.available() > 0) {
+    gps.encode(gpsSerial.read());
+  }
+
+  // Check if valid GPS location is available
+  if (gps.location.isValid()) {
+    Serial.print("Latitude: "); Serial.print(gps.location.lat(), 6);
+    Serial.print(" | Longitude: "); Serial.println(gps.location.lng(), 6);
+  } else {
+    Serial.println("Waiting for GPS signal...");
+  }
+
+  // Check for accident detection based on Z-axis tilt
+  if (zValue < tiltThreshold) {
+    disableTransmitter(); // Disable the transmitter when accident is detected
+    Serial.println("Tilt detected! Accident may have occurred.");
+    soundBuzzer();  // Sound the buzzer
+    if (gps.location.isValid()) {
+      sendSMS("Accident detected at Lat: " + String(gps.location.lat(), 6) + ", Long: " + String(gps.location.lng(), 6));
+    } else {
+      sendSMS("Accident detected! GPS signal not available.");
+    }
+    delay(2000);    // Keep the buzzer on for 2 seconds
+    stopBuzzer();   // Turn off the buzzer
+  }
+
+  // Check for alcohol detection
+  if (alcoholValue > alcoholThreshold) {
+    disableTransmitter(); // Disable the transmitter when alcohol is detected
+    Serial.println("Alcohol detected! Please refrain from driving.");
+    soundBuzzer();  // Sound the buzzer
+    if (gps.location.isValid()) {
+      sendSMS("Alcohol detected at Lat: " + String(gps.location.lat(), 6) + ", Long: " + String(gps.location.lng(), 6));
+    } else {
+      sendSMS("Alcohol detected! GPS signal not available.");
+    }
+    delay(2000);    // Keep the buzzer on for 2 seconds
+    stopBuzzer();   // Turn off the buzzer
+  }
+
+  // If no accident or alcohol is detected and helmet is worn, enable the transmitter
+  if (zValue >= tiltThreshold && alcoholValue <= alcoholThreshold && headDetected) {
+    enableTransmitter();
+  } else {
+    disableTransmitter();
+  }
+
+  delay(500);  // Add delay for loop stability
+}
+
+// Function to sound the buzzer
+void soundBuzzer() {
+  digitalWrite(buzzerPin, HIGH);  // Turn on the buzzer
+}
+
+// Function to stop the buzzer
+void stopBuzzer() {
+  digitalWrite(buzzerPin, LOW);  // Turn off the buzzer
+}
+
+// Function to enable the transmitter
+void enableTransmitter() {
+  digitalWrite(transmitterPin, HIGH);  // Turn on the transmitter
+}
+
+// Function to disable the transmitter
+void disableTransmitter() {
+  digitalWrite(transmitterPin, LOW);  // Turn off the transmitter
+}
+
+// Function to send SMS using SIM800L
+void sendSMS(String message) {
+  sim800l.println("AT+CMGF=1");  // Set SMS mode to text
+  delay(1000);
+  sim800l.println("AT+CMGS=\"+917869704009\"");  // Enter the recipient's phone number in international format
+  delay(1000);
+  sim800l.println(message);  // Send the actual message content (Accident or Alcohol detected)
+  delay(1000);
+  sim800l.write(26);  // Ctrl+Z to send the SMS
+  delay(1000);
+}
